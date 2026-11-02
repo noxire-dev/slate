@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- slate: a stack of one-bit cards. Source for `bun run tauri icon src-tauri/app-icon.svg`. -->
+  <g stroke="#6965db" stroke-width="48" stroke-linejoin="round">
+    <rect x="232" y="232" width="640" height="640" rx="72" fill="#fff" />
+    <rect x="172" y="172" width="640" height="640" rx="72" fill="#fff" />
+    <rect x="112" y="112" width="640" height="640" rx="72" fill="#fff" />
+  </g>
+  <!-- the active tab, inverted -->
+  <path d="M112 184a72 72 0 0 1 72-72h216v136H112z" fill="#6965db" />
+  <!-- three lines of text -->
+  <g stroke="#6965db" stroke-width="44" stroke-linecap="square">
+    <path d="M216 380h432M216 496h432M216 612h256" />
+  </g>
+</svg>

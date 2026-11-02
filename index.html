@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <title>slate</title>
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+
+  <body>
+    <!--
+      THESIS: slate looks and feels like Excalidraw, the owner's pinned direction: a plain canvas
+      with a few quiet islands floating on it. Refuses both the dark pastel code editor and the
+      one-bit pixel world it replaced, which the owner found hard to read.
+      OWN-WORLD: white canvas (#121212 dark), island panels with a soft 1px+5px shadow and 10px
+      corners, one violet (#6965db) whose light tint marks whatever is selected, Excalidraw's pen
+      colours for syntax and its highlighter washes for grounds. Assistant for chrome and reading,
+      the user's mono for writing, Excalifont only for headings and the empty-tab prompt.
+      STORY: open it, type, close it. Nothing asks. Open an agent's .md, flip to Read, follow links.
+      FIRST VIEWPORT: a 40px title row of pill tabs and flat window buttons. Below it the text owns
+      the whole window. Two islands float at the bottom: mode, position and state on the left,
+      Write/Read and Settings on the right.
+      FORM: user-pinned, no roll. Drawn clean throughout: hairline rules, soft grounds. A first pass
+      faked hand-drawn outlines with an SVG filter; the owner found them rough and they are gone.
+      FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
+    -->
+    <header id="bar" data-tauri-drag-region>
+      <select id="workspace" aria-label="Workspace" hidden></select>
+      <nav id="tabs" role="tablist" aria-label="Open tabs"></nav>
+      <div id="window">
+        <button id="minimize" aria-label="Minimize">
+          <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 8h8" /></svg>
+        </button>
+        <button id="maximize" aria-label="Maximize">
+          <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1.5 1.5h7v7h-7z" /></svg>
+        </button>
+        <button id="quit" aria-label="Close slate">
+          <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1.5 1.5l7 7m0-7l-7 7" /></svg>
+        </button>
+      </div>
+    </header>
+
+    <div id="desk">
+      <main id="card">
+        <div id="editor"></div>
+        <article id="reader" tabindex="0" hidden></article>
+        <nav id="outline" class="island" aria-label="Headings" hidden></nav>
+        <div id="find" class="island" role="search" hidden>
+          <input type="text" aria-label="Find in page" placeholder="Find" spellcheck="false" autocomplete="off" />
+          <span class="count"></span>
+          <button type="button" class="icon" data-dir="-1" aria-label="Previous match"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 6.5l3-3 3 3"/></svg></button>
+          <button type="button" class="icon" data-dir="1" aria-label="Next match"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5l3 3 3-3"/></svg></button>
+        </div>
+
+        <section id="settings" aria-labelledby="settings-title" hidden>
+          <h1 id="settings-title">Settings</h1>
+          <p class="note">Saved as you change them.</p>
+          <form id="settings-form">
+            <fieldset>
+              <legend>Look</legend>
+              <div class="row">
+                <span id="theme-label">Theme</span>
+                <div class="segmented" role="radiogroup" aria-labelledby="theme-label">
+                  <label><input type="radio" name="theme" value="system" /><span>Match Windows</span></label>
+                  <label><input type="radio" name="theme" value="light" /><span>Paper</span></label>
+                  <label><input type="radio" name="theme" value="dark" /><span>Ink</span></label>
+                </div>
+              </div>
+              <label class="row">
+                <span>Writing font</span>
+                <select name="fontFamily" data-default="Cascadia Mono"></select>
+              </label>
+              <label class="row">
+                <span>Heading font</span>
+                <select name="headingFont" data-default="Excalifont"></select>
+              </label>
+              <label class="row">
+                <span>Interface font</span>
+                <select name="uiFont" data-default="Assistant"></select>
+              </label>
+              <label class="row">
+                <span>Text size</span>
+                <input type="number" name="fontSize" min="8" max="40" />
+              </label>
+            </fieldset>
+            <fieldset>
+              <legend>Writing</legend>
+              <label class="row"><span>Vim keys</span><input type="checkbox" name="vim" /></label>
+              <label class="row"><span>Line numbers</span><input type="checkbox" name="lineNumbers" /></label>
+              <label class="row"><span>Relative line numbers</span><input type="checkbox" name="relativeNumbers" /></label>
+              <label class="row"><span>Wrap long lines</span><input type="checkbox" name="wrap" /></label>
+              <label class="row"><span>Check spelling in notes and markdown</span><input type="checkbox" name="spellcheck" /></label>
+              <label class="row">
+                <span>Tab width</span>
+                <input type="number" name="tabSize" min="1" max="8" />
+              </label>
+            </fieldset>
+            <fieldset>
+              <legend>Reading</legend>
+              <label class="row">
+                <span>Open .md files in Read</span><input type="checkbox" name="readMarkdown" />
+              </label>
+            </fieldset>
+          </form>
+          <h2>Keys</h2>
+          <div class="row">
+            <span>Change them in keys.json</span>
+            <span>
+              <button type="button" id="keys-here" class="quiet">Open in slate</button>
+              <button type="button" id="keys-out" class="quiet">Open in your editor</button>
+            </span>
+          </div>
+          <dl id="keys">
+            <div><dt>Ctrl N</dt><dd>New tab</dd></div>
+            <div><dt>Ctrl O</dt><dd>Open a file</dd></div>
+            <div><dt>Ctrl S</dt><dd>Save to a file</dd></div>
+            <div><dt>Ctrl W</dt><dd>Close this tab</dd></div>
+            <div><dt>Ctrl Tab</dt><dd>Next tab</dd></div>
+            <div><dt>Ctrl 1 … 9</dt><dd>Go to that tab; 9 is the last one</dd></div>
+            <div><dt>Ctrl + &nbsp;Ctrl −</dt><dd>Bigger or smaller text; Ctrl 0 puts it back</dd></div>
+            <div><dt>Ctrl click</dt><dd>Another cursor. Alt drag selects a column.</dd></div>
+            <div><dt>Ctrl E</dt><dd>Flip between Write and Read</dd></div>
+            <div><dt>Ctrl Shift C &nbsp;V</dt><dd>Copy and paste with the Windows clipboard, Vim keys or not</dd></div>
+            <div><dt>Ctrl F</dt><dd>Find, in Write or Read</dd></div>
+            <div><dt>Ctrl Shift O</dt><dd>Headings of the page you are reading</dd></div>
+            <div><dt>Ctrl ,</dt><dd>Settings</dd></div>
+            <div><dt>Ctrl Shift P</dt><dd>Every command, in a list you can search</dd></div>
+            <div><dt>:</dt><dd>The same list, with Vim keys on</dd></div>
+            <div><dt>:vimrc</dt><dd>Mappings and :set lines that run at every start</dd></div>
+          </dl>
+        </section>
+      </main>
+
+      <div id="palette" class="island" role="dialog" aria-label="Commands" hidden>
+        <ul role="listbox" aria-label="Commands"></ul>
+        <label>
+          <span aria-hidden="true">:</span>
+          <input type="text" aria-label="Command" placeholder="Type a command, or pick one" spellcheck="false" autocomplete="off" />
+        </label>
+      </div>
+
+      <footer id="status" class="island">
+        <span id="mode"></span>
+        <span id="pos"></span>
+        <span id="count"></span>
+        <span id="state"></span>
+        <span id="where"></span>
+      </footer>
+      <div id="actions" class="island">
+        <div class="segmented" role="radiogroup" aria-label="Write or read">
+          <label><input type="radio" name="face" value="write" /><span>Write</span></label>
+          <label><input type="radio" name="face" value="read" /><span>Read</span></label>
+        </div>
+        <button id="open-settings" aria-pressed="false">Settings</button>
+      </div>
+    </div>
+  </body>
+</html>

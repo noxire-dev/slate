@@ -1,0 +1,449 @@
+/* slate, after Excalidraw: a white canvas, quiet rounded islands floating on it, one violet.
+   Everything is drawn clean. The one hand-made thing is the heading face. */
+@font-face {
+  font-family: "Excalifont";
+  src: url("./fonts/Excalifont-Regular.woff2") format("woff2");
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light dark;
+  --canvas: light-dark(#ffffff, #121212);
+  --island: light-dark(#ffffff, #232329);
+  --surface: light-dark(#f1f0ff, #31303b);
+  --surface-low: light-dark(#f6f6f9, #1c1c21);
+  --border: light-dark(#e1e1ea, #3a3a44);
+  --ink: light-dark(#1b1b1f, #e3e3e8);
+  --muted: light-dark(#6a6a78, #a0a0ad);
+  --primary: light-dark(#6965db, #a8a5ff);
+  --primary-ink: light-dark(#4a47b1, #d5d3ff);
+  --primary-light: light-dark(#e0dfff, #403e6a);
+  --danger: light-dark(#e03131, #ff8787);
+
+  /* Excalidraw's pens, for syntax */
+  --violet: light-dark(#6741d9, #b197fc);
+  --green: light-dark(#2f9e44, #69db7c);
+  --orange: light-dark(#d9480f, #ffa94d);
+  --blue: light-dark(#1971c2, #74c0fc);
+  --red: light-dark(#c92a2a, #ff8787);
+  --grey: light-dark(#868e96, #868e96);
+  /* and its highlighters, for grounds */
+  --wash-yellow: light-dark(#fff3bf, rgb(255 236 153 / 0.16));
+  --wash-blue: light-dark(#e7f5ff, rgb(165 216 255 / 0.1));
+  --wash-green: light-dark(#d3f9d8, rgb(178 242 187 / 0.16));
+  --wash-red: light-dark(#ffe3e3, rgb(255 201 201 / 0.16));
+
+  --shadow: 0 0 0 1px light-dark(rgb(0 0 0 / 0.04), rgb(255 255 255 / 0.06)), 0 1px 5px rgb(0 0 0 / 0.15);
+  --ui: "Assistant", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --hand: "Excalifont", "Segoe Print", cursive;
+  --mono: "Cascadia Mono", "Cascadia Code", Consolas, monospace;
+  --size: 14px;
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; margin: 0; }
+
+body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 40px minmax(0, 1fr);
+  background: var(--canvas);
+  color: var(--ink);
+  font: 14px/1.2 var(--ui);
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+[hidden] { display: none !important; }
+
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+::selection { background: var(--primary-light); }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border: 2px solid var(--canvas); border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+::-webkit-scrollbar-corner { background: transparent; }
+
+button, input, select { font: inherit; color: inherit; }
+
+/* ---- Title row: tabs as pills, then the window buttons ---- */
+#bar { display: flex; align-items: center; min-width: 0; padding-left: 8px; }
+
+/* Which project's tabs these are. Only there once there is more than home to choose from. */
+#workspace {
+  flex: none;
+  width: auto;
+  max-width: 180px;
+  height: 28px;
+  margin-right: 8px;
+  padding: 0 26px 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background-color: var(--surface-low);
+  background-position: right 8px center;
+  color: var(--ink);
+  font: 600 13px var(--ui);
+  text-overflow: ellipsis;
+}
+#workspace:hover { background-color: var(--surface); }
+#workspace.unread { color: var(--primary-ink); background-color: var(--primary-light); }
+
+#tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  flex: 0 1 auto;
+  margin-right: 40px; /* however many tabs, this much bar is always left to drag the window by */
+  /* More tabs than fit: they squeeze, then the strip scrolls. */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  /* One sizing rule for every tab, selected or not: as wide as its name, within limits, with the
+     close button's room always reserved. Selecting a tab must not resize it or its neighbours. */
+  flex: 0 1 auto;
+  min-width: 72px; /* squeezed, a tab still shows the start of its name */
+  max-width: 190px;
+  height: 28px;
+  padding: 0 32px 0 10px;
+  border-radius: 8px;
+  color: var(--muted);
+  cursor: default;
+  position: relative;
+  --tab-ground: var(--canvas);
+  background: var(--tab-ground);
+}
+.tab:hover { --tab-ground: var(--surface-low); color: var(--ink); }
+/* The tab you are on keeps its full name when the others have to squeeze. */
+.tab[aria-selected="true"] {
+  flex-shrink: 0;
+  --tab-ground: var(--primary-light);
+  color: var(--primary-ink);
+}
+
+.tab .name { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+/* What the dot says: filled, this file has edits not on disk. A ring, not a file yet. */
+.tab .mark { flex: none; width: 7px; height: 7px; border: 1.5px solid currentColor; border-radius: 50%; }
+.tab:not(.dirty, .scratch, .unread) .mark { display: none; }
+.tab.dirty .mark { background: currentColor; }
+/* Queued by an agent with `slate add`, not looked at yet. */
+.tab.unread .mark { border-color: var(--primary); background: var(--primary); }
+.tab.unread { color: var(--ink); }
+
+.icon { display: grid; place-items: center; flex: none; padding: 0; border: 0; border-radius: 6px; background: none; }
+.icon svg, #window svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; }
+
+/* The close button lies over the end of the tab instead of taking room in it. Hovering a tab
+   must never change its width: that shoved every tab beside it sideways. It carries the tab's
+   own ground, so the end of a long name is covered rather than showing through. */
+.tab .close {
+  display: none;
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  background: var(--tab-ground);
+  box-shadow: -4px 0 4px var(--tab-ground); /* softens where a long name runs under it */
+}
+.tab:hover .close, .tab[aria-selected="true"] .close, .tab:focus-within .close { display: grid; }
+.tab .close:hover { background: linear-gradient(color-mix(in srgb, currentColor 14%, transparent) 0 0), var(--tab-ground); }
+
+#new { width: 28px; height: 28px; margin-left: 2px; color: var(--muted); }
+#new:hover { background: var(--surface-low); color: var(--ink); }
+
+/* The buttons fill the bar to the window corner, so a maximized window closes from the very
+   top-right pixel. */
+#window { display: flex; align-self: stretch; margin-left: auto; }
+#window button { display: grid; place-items: center; width: 44px; padding: 0; border: 0; background: none; color: var(--muted); }
+#window button:hover { background: var(--surface-low); color: var(--ink); }
+#window #quit:hover { background: var(--danger); color: var(--canvas); }
+
+/* ---- The canvas and its faces ---- */
+#desk { position: relative; min-height: 0; }
+#card { position: absolute; inset: 0; }
+#editor, #reader, #settings { position: absolute; inset: 0; background: var(--canvas); }
+
+#desk::after {
+  content: "";
+  position: absolute;
+  z-index: 4;
+  inset: auto 10px 0 0;
+  height: 72px;
+  background: linear-gradient(transparent, var(--canvas) 62%);
+  pointer-events: none;
+}
+
+#editor .cm-placeholder { color: var(--muted); font-family: var(--hand); }
+
+/* ---- Islands: the only chrome below the title row ---- */
+.island {
+  position: absolute;
+  z-index: 5;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 36px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--island);
+  box-shadow: var(--shadow);
+  white-space: nowrap;
+}
+#status { left: 14px; color: var(--muted); font-size: 13px; }
+#actions { right: 24px; }
+#status > * { padding: 0 8px; }
+#status > :empty { display: none; }
+#status:not(:has(> :not(:empty))) { display: none; }
+
+#mode { height: 28px; border-radius: 7px; background: var(--surface); color: var(--primary-ink); font-weight: 600; line-height: 28px; }
+#mode[data-vim^="insert"] { background: var(--wash-green); color: var(--green); }
+#mode[data-vim^="visual"] { background: var(--wash-yellow); color: var(--orange); }
+#mode[data-vim^="replace"] { background: var(--wash-red); color: var(--red); }
+#pos, #count { font-variant-numeric: tabular-nums; }
+#where { max-width: 50vw; overflow: hidden; text-overflow: ellipsis; color: var(--danger); }
+
+.segmented { display: flex; gap: 2px; }
+.segmented input { position: absolute; opacity: 0; pointer-events: none; }
+.segmented span { display: block; padding: 0 12px; border-radius: 7px; color: var(--muted); line-height: 28px; }
+.segmented label:hover span { background: var(--surface-low); color: var(--ink); }
+.segmented input:checked + span { background: var(--primary-light); color: var(--primary-ink); font-weight: 600; }
+.segmented input:disabled + span { opacity: 0.4; }
+.segmented input:focus-visible + span { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+#open-settings, .quiet { height: 28px; padding: 0 12px; border: 0; border-radius: 7px; background: none; color: var(--muted); }
+#open-settings:hover, .quiet:hover { background: var(--surface-low); color: var(--ink); }
+#open-settings[aria-pressed="true"] { background: var(--primary-light); color: var(--primary-ink); font-weight: 600; }
+
+/* ---- Read ---- */
+/* One column, one left edge: the measure is set on the face, not per element. */
+#reader, #settings {
+  overflow: auto;
+  padding: 36px max(40px, calc((100% - 680px) / 2)) 30vh;
+  font: 16px/1.65 var(--ui);
+  user-select: text;
+  -webkit-user-select: text;
+}
+#reader:focus-visible { outline: none; }
+/* Reading text follows the text size setting, two pixels above the writing size as at the default. */
+#reader { font-size: calc(var(--size) + 2px); }
+#reader > :first-child { margin-top: 0; }
+#reader > :not(pre, table) { max-width: 600px; }
+
+#reader :is(h1, h2, h3, h4, h5, h6) { scroll-margin-top: 24px; }
+#reader :is(h1, h2, h3), #settings :is(h1, h2) {
+  font-family: var(--hand);
+  font-weight: 400;
+  line-height: 1.2;
+  text-wrap: balance;
+  margin: 1.9em 0 0.5em;
+}
+#reader h1, #settings h1 { font-size: 36px; }
+#reader h2, #settings h2 { font-size: 26px; }
+#reader h3 { font-size: 20px; }
+#reader :is(h4, h5, h6) { font: 600 16px/1.3 var(--ui); margin: 1.8em 0 0.4em; }
+#reader h2, #settings h2 { padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+
+#reader p, #reader ul, #reader ol, #reader pre, #reader table, #reader blockquote { margin-block: 0 1.1em; }
+#reader :is(ul, ol) { padding-left: 1.5em; }
+#reader li + li { margin-top: 0.25em; }
+#reader li > :is(ul, ol) { margin: 0.25em 0 0; }
+#reader li:has(> input) { list-style: none; margin-left: -1.5em; }
+
+#reader a { color: var(--primary); text-underline-offset: 3px; text-decoration-thickness: 1px; }
+#reader a:hover { color: var(--primary-ink); text-decoration-thickness: 2px; }
+
+#reader hr { height: 0; border: 0; border-top: 1px solid var(--border); margin: 2em 0; }
+
+#reader blockquote { margin-inline: 0; padding: 12px 18px; border-radius: 10px; background: var(--wash-blue); }
+#reader blockquote > :last-child { margin-bottom: 0; }
+
+#reader :is(code, kbd) { font: 0.88em var(--mono); }
+#reader :not(pre) > code { padding: 2px 5px; border-radius: 5px; background: var(--wash-yellow); }
+#reader kbd { padding: 1px 6px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 6px; background: var(--island); }
+#reader pre { border: 1px solid var(--border); border-radius: 10px; background: var(--surface-low); font: 14px/1.6 var(--mono); tab-size: 2; }
+#reader pre > code { display: block; padding: 14px 16px; overflow-x: auto; font: inherit; }
+#reader pre { position: relative; }
+#reader pre .copy {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--island);
+  color: var(--muted);
+  font: 12px var(--ui);
+  opacity: 0;
+  transition: opacity 120ms;
+}
+#reader pre:hover .copy, #reader pre .copy:focus-visible, #reader pre .copy.done { opacity: 1; }
+#reader pre .copy:hover { color: var(--ink); }
+#reader pre .copy.done { color: var(--green); border-color: var(--green); }
+
+/* ---- Outline and find: islands that float over the Read face ---- */
+#outline {
+  top: 52px;
+  right: 24px;
+  bottom: auto;
+  display: block;
+  width: 260px;
+  max-height: calc(100% - 120px);
+  height: auto;
+  padding: 6px;
+  overflow-y: auto;
+  white-space: normal;
+}
+#outline a { display: block; padding: 6px 10px; border-radius: 7px; color: var(--muted); font-size: 13px; text-decoration: none; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#outline a:hover, #outline a:focus-visible { background: var(--surface-low); color: var(--ink); outline: none; }
+#outline a[aria-current="true"] { background: var(--primary-light); color: var(--primary-ink); }
+#outline a[data-level="2"] { padding-left: 22px; }
+#outline a[data-level="3"] { padding-left: 34px; }
+#outline a[data-level="4"], #outline a[data-level="5"], #outline a[data-level="6"] { padding-left: 46px; }
+#outline p { margin: 0; padding: 8px 10px; color: var(--muted); font-size: 13px; }
+
+#find { top: 52px; right: 24px; bottom: auto; gap: 4px; }
+#find input { width: 220px; height: 28px; padding: 0 10px; border: 0; border-radius: 7px; background: var(--surface-low); font: 14px var(--ui); outline: none; }
+#find input:focus-visible { box-shadow: 0 0 0 2px var(--primary-light); }
+#find .count { min-width: 44px; padding: 0 4px; color: var(--muted); font-size: 13px; text-align: center; font-variant-numeric: tabular-nums; }
+#find .icon { width: 28px; height: 28px; color: var(--muted); }
+#find .icon:hover { background: var(--surface-low); color: var(--ink); }
+#find .icon svg { width: 12px; height: 12px; stroke-width: 1.5; }
+#reader mark { background: var(--wash-yellow); color: inherit; }
+#reader mark.current { background: var(--primary-light); color: var(--primary-ink); }
+
+#reader table { display: block; width: fit-content; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: 15px; }
+#reader :is(th, td) { padding: 7px 14px; border: 1px solid var(--border); text-align: left; vertical-align: top; }
+#reader th { background: var(--surface-low); font-weight: 600; }
+
+#reader img { max-width: 100%; border-radius: 8px; font-size: 14px; color: var(--muted); }
+#reader details { margin-bottom: 1.1em; }
+#reader summary { font-weight: 600; cursor: default; }
+
+/* ---- Settings, and the form controls ---- */
+#settings { padding-inline: max(40px, calc((100% - 560px) / 2)); font-size: 15px; }
+#settings h1 { margin-top: 0; margin-bottom: 2px; }
+#settings .note { margin: 0 0 26px; color: var(--muted); font-size: 14px; }
+
+fieldset { margin: 0 0 8px; padding: 10px 0 14px; border: 0; border-top: 1px solid var(--border); }
+legend { padding: 0 10px 0 0; color: var(--muted); font-size: 14px; font-weight: 600; }
+
+.row { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 42px; }
+
+input[type="text"], input[type="number"], select {
+  width: 230px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--island);
+  font: 14px var(--mono);
+}
+input[type="number"] { width: 76px; }
+select {
+  appearance: none;
+  font-family: var(--ui);
+  padding-right: 30px;
+  background: var(--island) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%236a6a78' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4.5l3 3 3-3'/%3E%3C/svg%3E") right 10px center / 12px no-repeat;
+}
+select option { background: var(--island); color: var(--ink); }
+input::placeholder { color: var(--muted); }
+:is(input[type="text"], input[type="number"], select):focus-visible { border-color: var(--primary); outline: 2px solid var(--primary-light); outline-offset: 0; }
+
+input[type="checkbox"] {
+  appearance: none;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 0 9px 0 0;
+  border: 1.5px solid var(--muted);
+  border-radius: 5px;
+  background: var(--island);
+  vertical-align: -3px;
+}
+input[type="checkbox"]:checked {
+  border-color: var(--primary);
+  background: var(--primary) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 6.5l2.5 2.5 4.5-5.5'/%3E%3C/svg%3E") center / 12px no-repeat;
+}
+.row input[type="checkbox"] { margin-right: 0; }
+
+#settings .segmented { padding: 3px; border-radius: 10px; background: var(--surface-low); }
+#settings .segmented input:checked + span { background: var(--island); box-shadow: var(--shadow); }
+
+#keys { display: grid; gap: 9px; margin-block: 0; }
+#keys > div { display: grid; grid-template-columns: 170px 1fr; align-items: baseline; }
+#keys dt { font: 13px var(--mono); color: var(--muted); }
+#keys dd { margin: 0; }
+
+/* ---- The command bar: what slate can do, as a list you filter by typing ---- */
+#palette {
+  left: 50%;
+  bottom: 60px;
+  z-index: 7;
+  translate: -50% 0;
+  display: block;
+  width: min(540px, calc(100% - 32px));
+  height: auto;
+  padding: 6px;
+  white-space: normal;
+}
+#palette ul { max-height: min(46vh, 420px); margin: 0 0 6px; padding: 0; overflow-y: auto; list-style: none; }
+#palette ul:empty { display: none; }
+#palette li { display: grid; grid-template-columns: 96px 1fr auto; align-items: baseline; gap: 12px; padding: 7px 10px; border-radius: 7px; color: var(--muted); cursor: default; }
+#palette li b { color: var(--ink); font: 600 14px var(--mono); }
+#palette li kbd { font: 12px var(--mono); }
+#palette li:hover { background: var(--surface-low); }
+#palette li[aria-selected="true"] { background: var(--primary-light); color: var(--primary-ink); }
+#palette li[aria-selected="true"] b { color: var(--primary-ink); }
+#palette label { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 10px; border-radius: 7px; background: var(--surface-low); }
+#palette label span { color: var(--primary); font: 600 14px var(--mono); }
+#palette input { flex: 1; min-width: 0; padding: 0; border: 0; outline: none; background: none; font: 14px var(--mono); }
+
+/* ---- Zen: the text in a centred column ---- */
+body.zen #editor .cm-scroller { justify-content: center; }
+body.zen #editor .cm-content { flex: 0 1 80ch; max-width: 80ch; }
+
+/* ---- CodeMirror's own panels (find, the vim command line): one floating command bar, centred
+   above the islands, instead of a strip glued to the bottom edge ---- */
+#editor .cm-panels-bottom {
+  position: absolute;
+  z-index: 6;
+  left: 50%;
+  bottom: 60px;
+  translate: -50% 0;
+  width: max-content;
+  min-width: min(440px, calc(100% - 32px));
+  max-width: calc(100% - 32px);
+  border: 0;
+  border-radius: 10px;
+  background: var(--island);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+#editor .cm-vim-panel { align-items: center; min-height: 40px; padding: 0 14px; font: 14px var(--mono); }
+/* the plugin lays the ":" and the input out with inline styles, hence the !important */
+#editor .cm-vim-panel span { align-items: center; gap: 6px; font-family: var(--mono) !important; color: var(--primary); font-weight: 600; }
+#editor .cm-vim-panel input { flex: 1; min-width: 0; height: 40px; padding: 0; outline: none; color: var(--ink); font: 400 14px var(--mono); }
+
+#editor .cm-panel.cm-search { padding: 8px 12px; font: 13px var(--ui); }
+#editor .cm-panel.cm-search label { display: inline-flex; align-items: center; margin-right: 10px; }
+#editor .cm-textfield { padding: 4px 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--island); color: var(--ink); font: 13px var(--mono); }
+#editor .cm-button { padding: 3px 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--island); color: var(--ink); font: 13px var(--ui); }
+#editor .cm-button:hover { background: var(--surface-low); }
+#editor .cm-panel.cm-search [name="close"] { color: var(--muted); font-size: 16px; }
+
+@media (max-width: 620px) {
+  #state { display: none; }
+  #reader, #settings { padding-inline: 20px; }
+  .row { flex-wrap: wrap; gap: 6px; padding-block: 6px; }
+}
