@@ -40,7 +40,7 @@ After writing a plan, report or review file, run `slate add --read <file>`.
 
 slate makes no network requests. There is no update check, no crash reporting and no analytics. The only thing that leaves the app is a link you click, which opens in your default browser.
 
-Your tabs, settings and vimrc live in `%LOCALAPPDATA%\dev.mirako.slate\`. Unsaved text is stored there as plain text.
+Your tabs, settings and vimrc live in `%LOCALAPPDATA%\dev.mirako.slate\`. Unsaved text is encrypted there with Windows DPAPI, locked to your Windows account. There is no password to forget. A copy of those files, from a backup, a synced folder, another account or a pulled disk, can't be read. Software running as you can still read them, because slate has to. So a notepad is still not a password manager. Settings, `keys.json` and the vimrc stay plain text so you can edit them by hand. Files you save are written exactly as you typed them.
 
 slate reads and writes only files you pointed at: picked in a dialog, dropped on the window, named on the command line, or allowed in a prompt. A markdown file cannot make it open anything else.
 

@@ -1,4 +1,5 @@
 mod grants;
+mod vault;
 
 use std::{fs, path::PathBuf, sync::Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -102,7 +103,12 @@ fn state_path(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
 #[tauri::command]
 fn load_state(app: AppHandle, name: String) -> Result<Option<String>, String> {
     let path = state_path(&app, &name)?;
-    let Ok(json) = fs::read_to_string(&path) else {
+    let Ok(bytes) = fs::read(&path) else {
+        return Ok(None);
+    };
+    // A file sealed under another Windows account, or damaged, is kept aside, not overwritten.
+    let Ok((json, sealed)) = vault::open(&bytes) else {
+        let _ = fs::rename(&path, path.with_extension("corrupt.json"));
         return Ok(None);
     };
     // vimrc is not JSON; keys is hand-edited, so a typo is reported by the page, not moved aside.
@@ -110,7 +116,25 @@ fn load_state(app: AppHandle, name: String) -> Result<Option<String>, String> {
         let _ = fs::rename(&path, path.with_extension("corrupt.json"));
         return Ok(None);
     }
+    // Tabs saved before encryption get sealed the first time they are read.
+    if holds_tabs(&name) && !sealed {
+        let _ = write_state(&path, &name, &json);
+    }
     Ok(Some(json))
+}
+
+/// The tab sets hold unsaved text, which can be anything the user pasted. Those are encrypted;
+/// settings, keys and vimrc stay plain so they can be edited by hand.
+fn holds_tabs(name: &str) -> bool {
+    name == "session" || name.starts_with("ws-")
+}
+
+/// Write-then-rename, so a crash mid-write leaves the previous file intact.
+fn write_state(path: &std::path::Path, name: &str, json: &str) -> Result<(), String> {
+    let bytes = if holds_tabs(name) { vault::seal(json)? } else { json.as_bytes().to_vec() };
+    let tmp = path.with_extension("json.tmp");
+    fs::write(&tmp, bytes).map_err(|e| e.to_string())?;
+    fs::rename(&tmp, path).map_err(|e| e.to_string())
 }
 
 /// Opens one of slate's own files in whatever Windows opens it with.
@@ -121,13 +145,9 @@ fn open_state(app: AppHandle, name: String) -> Result<(), String> {
     app.opener().open_path(path.to_string_lossy(), None::<&str>).map_err(|e| e.to_string())
 }
 
-/// Write-then-rename, so a crash mid-write leaves the previous file intact.
 #[tauri::command]
 fn save_state(app: AppHandle, name: String, json: String) -> Result<(), String> {
-    let path = state_path(&app, &name)?;
-    let tmp = path.with_extension("json.tmp");
-    fs::write(&tmp, json).map_err(|e| e.to_string())?;
-    fs::rename(&tmp, &path).map_err(|e| e.to_string())
+    write_state(&state_path(&app, &name)?, &name, &json)
 }
 
 #[derive(serde::Serialize)]
