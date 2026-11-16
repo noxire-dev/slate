@@ -614,13 +614,31 @@ const shortcuts: Record<string, () => unknown> = {
 let userKeys: Record<string, string> = {};
 const KEYS_STARTER = JSON.stringify(
   {
-    "//": 'Key: command. Commands are the names in Ctrl+Shift+P, with an argument after a space. "" frees a key. Saved keys apply at once.',
+    "//": 'Key: command. Commands are the names in Ctrl+Shift+P, with an argument after a space. Modifiers: ctrl, alt, shift, e.g. "ctrl+shift+1", "alt+k". "" frees a key. Saved keys apply at once.',
     "ctrl+shift+c": "copy",
     "ctrl+shift+v": "paste",
   },
   null,
   2,
 );
+/** "Shift+Ctrl+X" and "ctrl+shift+x" are the same binding. */
+function canonical(combo: string) {
+  const parts = combo.toLowerCase().replace(/\s/g, "").split(/\+(?!$)/);
+  const key = parts.pop() ?? "";
+  return ["ctrl", "alt", "shift"].filter((m) => parts.includes(m)).map((m) => m + "+").join("") + key;
+}
+
+// Punctuation by key position, so Shift doesn't turn "ctrl+shift+=" into "ctrl+shift++".
+const PUNCT: Record<string, string> = {
+  Minus: "-", Equal: "=", BracketLeft: "[", BracketRight: "]", Semicolon: ";", Quote: "'",
+  Comma: ",", Period: ".", Slash: "/", Backslash: "\\", Backquote: "`",
+};
+/** The keys.json name of a key press. Letters follow the layout; digits and punctuation follow the key, not what Shift or Alt typed. */
+function pressed(e: KeyboardEvent) {
+  const key = /^[a-z]$/i.test(e.key) ? e.key : /^(Key|Digit)/.test(e.code) ? e.code.slice(e.code[0] === "K" ? 3 : 5) : PUNCT[e.code] ?? e.key;
+  return `${e.ctrlKey ? "ctrl+" : ""}${e.altKey ? "alt+" : ""}${e.shiftKey ? "shift+" : ""}${key.toLowerCase()}`;
+}
+
 async function loadKeys() {
   const text = await store.load("keys").catch(() => null);
   try {
@@ -630,7 +648,7 @@ async function loadKeys() {
     for (const [key, value] of Object.entries(parsed)) {
       if (key.startsWith("//")) continue;
       if (typeof value !== "string" || (value && !resolve(commands, value))) throw new Error(`no command called "${value}" for ${key}`);
-      next[key.toLowerCase().replace(/\s/g, "")] = value;
+      next[canonical(key)] = value;
     }
     userKeys = next;
   } catch (error) {
@@ -694,7 +712,7 @@ addEventListener(
     const reload = e.key === "F5" || (e.ctrlKey && e.key.toLowerCase() === "r");
     if (reload && !(settings.vim && (e.target as Element).closest?.(".cm-editor"))) return e.preventDefault();
     const combo = `${e.ctrlKey ? "ctrl+" : ""}${e.shiftKey ? "shift+" : ""}${e.key.toLowerCase()}`;
-    const bound = e.altKey ? undefined : userKeys[combo];
+    const bound = userKeys[pressed(e)];
     if (bound === "") return;
     if (bound) {
       const found = resolve(commands, bound);

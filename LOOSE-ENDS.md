@@ -57,12 +57,13 @@ Scores: Opus 5 → 8 → 8.5, Sol 6 → 7 → 8. Both said they would not switch
 Fixed and covered by tests in `session.test.ts`: `:wq` closing after a cancelled save; edits typed during a save lost on restart; closing a tab mid-save (including two overlapping saves) skipping the prompt; a deleted file's tab dropped at restart, and staying "edited" forever once the file came back; vimrc/keys tabs asking "discard?" after saving and going stale; `yy` then `p` reading the old clipboard; a second unreadable state file replacing the first `.corrupt` copy.
 
 Open:
+
 - [ ] Opening a file from a git repo switches the whole tab set to that repo's workspace. Both seats found it confusing for a Notepad user. Owner's call: make it explicit, or keep it.
 - [ ] Two `slate add` arrivals into the same inactive workspace can lose one (no serialisation).
 - [ ] A failed session write doesn't stop the window closing or a workspace switch.
 - [ ] Read-view find keeps matches from the previous document after a re-render.
 - [ ] A file that fails to decrypt is set aside silently; nothing on screen says so.
-- [ ] keys.json combos come from `e.key`, so `ctrl+shift+1` arrives as `ctrl+shift+!`; Alt combos can't be bound.
+- [x] keys.json combos come from `e.key`, so `ctrl+shift+1` arrives as `ctrl+shift+!`; Alt combos can't be bound. Fixed 2026-11-16: digits and punctuation are named by key position, Alt binds, modifier order in the file doesn't matter. Checked with fake key events, not in the real window.
 - [ ] No visible Open or Save control. The palette matches command names, not their descriptions.
 - [ ] Declining the read prompt for a file marks its tab unsaved until the next successful read.
 - Suggested next builds: Opus says clickable `path:line` in Read view; Sol says a "recently closed" shelf. Both said cut the heading-font picker.
