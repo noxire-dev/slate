@@ -18,11 +18,10 @@ const store: Store = "__TAURI_INTERNALS__" in window ? new TauriStore() : new Br
 let settings = parseSettings(await store.load("settings"));
 let settingsOpen = false;
 
-// Which tab set comes up: the project slate was launched from, else home if it was handed loose
-// files, else wherever the user last was.
+// Which tab set comes up: the project named with `slate -w`, else wherever the user last was.
 const index = parseIndex(await store.load("workspaces").catch(() => null));
 const launch: Launch = await store.launch().catch(() => ({ files: [], read: false, scratch: false, background: false }));
-let session = new Session(store, launch.workspace ? workspaceFor(index, launch.workspace).id : launch.files.length ? HOME : index.current);
+let session = new Session(store, launch.workspace ? workspaceFor(index, launch.workspace).id : index.current);
 const editor = new Editor($("editor"), settings, {
   edited() {
     session.active.dirty = true;
@@ -91,6 +90,9 @@ function flip() {
   if (face.id !== "reader") ((outline.hidden = true), (find.hidden = true));
   if (face.id === "reader") {
     face.replaceChildren(renderMarkdown(tab.text, ink));
+    // The old marks went with the old page. An open find box searches the new one.
+    if (find.hidden) clearMatches();
+    else runFind();
     face.scrollTop = readingAt.get(tab.id) ?? 0;
   }
   if (face.id === "editor") editor.view.focus();
@@ -236,7 +238,7 @@ async function fileInto(target: Session, launch: Launch) {
 
 /** Takes files from anywhere: the picker, a drop, the command line, an agent running `slate add`. */
 async function receive(launch: Launch) {
-  const target = launch.workspace === undefined ? session.name : launch.workspace ? workspaceFor(index, launch.workspace).id : HOME;
+  const target = launch.workspace ? workspaceFor(index, launch.workspace).id : session.name;
   if (target !== session.name && launch.background) {
     // An agent queued something for another project. File it there and leave the user where they are.
     const elsewhere = new Session(store, target);
@@ -266,9 +268,16 @@ function saveIndex() {
   return store.save("workspaces", JSON.stringify(index, null, 2)).catch(report);
 }
 
-async function switchTo(id: string) {
-  if (id === session.name) return;
-  await flush().catch(report);
+/** False if this workspace's tabs couldn't be written, in which case the user stays put. */
+async function switchTo(id: string): Promise<boolean> {
+  if (id === session.name) return true;
+  try {
+    await flush();
+  } catch (error) {
+    report(`Stayed here: this workspace's tabs couldn't be saved (${String(error).replace(/^Error: /, "")}).`);
+    $<HTMLSelectElement>("workspace").value = session.name;
+    return false;
+  }
   editor.clear();
   readingAt.clear();
   stamps.clear();
@@ -276,6 +285,18 @@ async function switchTo(id: string) {
   await session.restore();
   arrive();
   show(session.activeId);
+  return true;
+}
+
+/** Takes a workspace off the switcher. Its tab set file stays, so `slate -w` in that folder brings the tabs back. */
+async function forget(name: string) {
+  const gone = name ? index.list.find((w) => w.name.toLowerCase().startsWith(name)) : index.list.find((w) => w.id === session.name);
+  if (!gone) return report(name ? `No workspace called ${name}.` : "Home can't be forgotten. Name a workspace: ws forget <name>");
+  if (gone.id === session.name && !(await switchTo(HOME))) return;
+  index.list = index.list.filter((w) => w !== gone);
+  index.unread = index.unread.filter((id) => id !== gone.id);
+  await saveIndex();
+  report(`Forgot ${gone.name}. Run slate -w in ${gone.path} to bring its tabs back.`);
 }
 
 /** The user is now looking at this workspace: it is where a plain launch returns to, and it is read. */
@@ -763,12 +784,13 @@ const commands: Command[] = [
   {
     name: "ws",
     aliases: ["workspace"],
-    hint: "Switch project: ws home, ws <name>",
+    hint: "Switch project: ws home, ws <name>. ws forget <name> takes one off the list",
     run(arg) {
       const wanted = arg.toLowerCase();
+      if (wanted === "forget" || wanted.startsWith("forget ")) return void forget(wanted.slice(7).trim());
       const found = wanted === "home" ? HOME : index.list.find((w) => wanted && w.name.toLowerCase().startsWith(wanted))?.id;
       if (found) void switchTo(found);
-      else report(index.list.length ? `Workspaces: home, ${index.list.map((w) => w.name).join(", ")}` : "No workspaces yet. Run slate from inside a git repository to start one.");
+      else report(index.list.length ? `Workspaces: home, ${index.list.map((w) => w.name).join(", ")}` : "No workspaces yet. Run slate -w inside a project folder to start one.");
     },
   },
   { name: "outline", aliases: ["toc", "headings"], hint: "Headings of the page you are reading", keys: "Ctrl Shift O", run: () => toggleOutline(true) },

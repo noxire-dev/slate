@@ -8,7 +8,7 @@ A notepad for Windows with no network code, no account, no AI and no telemetry. 
 - **Reads markdown.** Flip any tab to Read (Ctrl+E) for a rendered page with highlighted code, tables, task lists, a heading outline (Ctrl+Shift+O), find (Ctrl+F) and a copy button on code blocks. Links to other files open as tabs. Web links open in your browser.
 - **Follows files that change.** When an agent rewrites a file you have open, the tab reloads on its own. If you had unsaved edits, they are kept, and saving asks before overwriting the newer file.
 - **Vim keys, built in and optional.** Turn them on in Settings or with `:vim`. Mappings and `:set` lines live in a vimrc (`:vimrc`). Yanks go to the Windows clipboard.
-- **A tab set per project.** Run slate from inside a git repository and it opens that repository's own tabs. Plain launches use the home set.
+- **A tab set per project, when you ask for one.** `slate -w` opens the tabs of the git repository you are in (or of that folder). Without `-w`, files open in whichever set is on screen. `:ws forget <name>` takes one off the switcher.
 - **One list of everything it can do.** Ctrl+Shift+P, or `:` with vim keys on.
 
 ## Install
@@ -27,6 +27,8 @@ The command line is the whole API.
 | `slate --read plan.md` | The same, rendered. |
 | `slate add plan.md` | Queues the file without taking focus. The tab is marked unread. |
 | `slate add --scratch notes.md` | Copies the text into a note slate keeps. The file itself is not opened. |
+| `slate -w plan.md` | Uses this project's own tab set. Works with `add` too. |
+| `slate -h` | Lists all of the above. |
 
 `add` works whether slate is running or not. If it is not, the tab is filed and waiting at the next launch.
 

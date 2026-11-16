@@ -48,7 +48,7 @@ The command line is the whole API, so there is still no network code. `slate pla
 
 - [x] The installer puts the exe on the user PATH (2026-09-26), so `slate add plan.md` works by name. Verified: install, add by name in 16ms, reinstall without a duplicate PATH entry, uninstall restores PATH byte for byte.
 - [x] Workspaces, keyed by folder (owner's call, 2026-09-20): the git repository slate was run from, else the one the first file lives in, else home. Each is its own tab set (`ws-<folder>-<hash>.json` beside `session.json`). `slate add` from inside a repo files into that repo's set without moving the user, and flags it on the switcher; opening a file in the foreground switches the window over. The switcher only appears once a workspace exists. `:ws <name>` switches too. Checked on the real exe.
-- [ ] No way yet to forget a workspace, and its tab set file stays behind if the folder is deleted.
+- [x] No way yet to forget a workspace, and its tab set file stays behind if the folder is deleted. `:ws forget <name>` (2026-11-16) takes it off the switcher; the file stays on purpose so `slate -w` there brings the tabs back.
 
 ## Council, 2026-11-16 (Claude Opus, GPT Sol; 3 rounds)
 
@@ -58,13 +58,13 @@ Fixed and covered by tests in `session.test.ts`: `:wq` closing after a cancelled
 
 Open:
 
-- [ ] Opening a file from a git repo switches the whole tab set to that repo's workspace. Both seats found it confusing for a Notepad user. Owner's call: make it explicit, or keep it.
+- [x] Opening a file from a git repo switches the whole tab set to that repo's workspace. Owner's call (2026-11-16): explicit. Only `slate -w` picks a workspace; everything else opens in the set on screen.
 - [ ] Two `slate add` arrivals into the same inactive workspace can lose one (no serialisation).
-- [ ] A failed session write doesn't stop the window closing or a workspace switch.
-- [ ] Read-view find keeps matches from the previous document after a re-render.
+- [x] A failed session write doesn't stop the window closing or a workspace switch. Now the switch is refused with a message, and closing asks first.
+- [x] Read-view find keeps matches from the previous document after a re-render. A re-render now clears them, or searches the new page if the box is open.
 - [ ] A file that fails to decrypt is set aside silently; nothing on screen says so.
 - [x] keys.json combos come from `e.key`, so `ctrl+shift+1` arrives as `ctrl+shift+!`; Alt combos can't be bound. Fixed 2026-11-16: digits and punctuation are named by key position, Alt binds, modifier order in the file doesn't matter. Checked with fake key events, not in the real window.
-- [ ] No visible Open or Save control. The palette matches command names, not their descriptions.
+- [ ] No visible Open or Save control (owner, 2026-11-16: undecided; Ctrl+O/Ctrl+S, `:w` and the palette's open/save aliases cover it for now). The palette matches command names, not their descriptions.
 - [ ] Declining the read prompt for a file marks its tab unsaved until the next successful read.
 - Suggested next builds: Opus says clickable `path:line` in Read view; Sol says a "recently closed" shelf. Both said cut the heading-font picker.
 

@@ -13,7 +13,7 @@ export interface TextFile {
   encoding: string;
 }
 
-/** What a launch asked for: `slate [add] [--read] [--scratch] files…` */
+/** What a launch asked for: `slate [add] [-r] [-s] [-w] files…` (`slate -h`) */
 export interface Launch {
   files: string[];
   /** Open rendered. */
@@ -22,8 +22,8 @@ export interface Launch {
   scratch: boolean;
   /** Queue without taking focus; the tabs show as unread. */
   background: boolean;
-  /** The project folder it belongs to, null for home. Undefined means "wherever the user is now": the picker, a drop. */
-  workspace?: string | null;
+  /** The project folder whose tab set to use (`slate -w`). Undefined means whichever set is on screen. */
+  workspace?: string;
 }
 
 export interface FontFamily {
@@ -102,8 +102,15 @@ export class TauriStore implements Store {
   }
 
   onQuit(handler: () => Promise<void>) {
-    // A handler that throws would leave a window that can't be closed.
-    void getCurrentWindow().onCloseRequested(() => handler().catch(() => {}));
+    // If the tabs can't be written, ask before closing. Never leave a window that can't be closed.
+    void getCurrentWindow().onCloseRequested(async (event) => {
+      try {
+        await handler();
+      } catch (error) {
+        const why = String(error).replace(/^Error: /, "");
+        if (!(await this.confirm(`slate couldn't save your tabs (${why}). Close anyway and lose what changed since the last save?`))) event.preventDefault();
+      }
+    });
   }
 }
 

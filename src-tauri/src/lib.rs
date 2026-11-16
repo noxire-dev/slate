@@ -255,18 +255,33 @@ fn list_fonts() -> Vec<FontFamily> {
     Vec::new()
 }
 
-/// What a launch asked for. The command line is slate's whole API for agents and scripts:
-///   slate plan.md            open it and come to the front
-///   slate --read plan.md     the same, rendered
-///   slate add plan.md        queue it without taking focus; the tab shows as unread
-///   slate add --scratch x.md copy its text into a note slate keeps, not tied to the file
+/// The command line is slate's whole API for agents and scripts. `slate -h` prints this.
+const HELP: &str = "slate, a notepad that keeps every tab
+
+Usage:
+  slate [files]               open them and come to the front
+  slate add [files]           queue them without taking focus; the tabs show as unread
+
+Options:
+  -r, --read                  open rendered
+  -s, --scratch               copy the text into a note slate keeps, not tied to the file
+  -w, --workspace             use this project's own tab set: the git repository you are in,
+                              else the one the first file lives in, else this folder
+  -h, --help                  show this
+  -V, --version               show the version
+
+Without -w, files open in whichever tab set is on screen.
+";
+
+/// What a launch asked for.
 #[derive(Clone, Default, Debug, PartialEq, serde::Serialize)]
 struct Launch {
     files: Vec<String>,
     read: bool,
     scratch: bool,
     background: bool,
-    /** The project folder this launch belongs to; None means the home tab set. */
+    /** The project folder whose tab set to use; None means whichever set is on screen. */
+    #[serde(skip_serializing_if = "Option::is_none")]
     workspace: Option<String>,
 }
 
@@ -279,24 +294,45 @@ fn workspace_for(cwd: &str, files: &[String]) -> Option<String> {
     })
 }
 
-fn parse_launch(args: &[String], cwd: &str) -> Launch {
+/// What the command line asked for, or the text to print and exit with (help, version, a bad flag).
+fn parse_launch(args: &[String], cwd: &str) -> Result<Launch, (i32, String)> {
     let mut launch = Launch::default();
+    let mut workspace = false;
     for (i, arg) in args.iter().enumerate().skip(1) {
         match arg.as_str() {
             "add" if i == 1 => launch.background = true,
-            "--read" => launch.read = true,
-            "--scratch" => launch.scratch = true,
-            flag if flag.starts_with('-') => {}
+            "-r" | "--read" => launch.read = true,
+            "-s" | "--scratch" => launch.scratch = true,
+            "-w" | "--workspace" => workspace = true,
+            "-h" | "--help" | "/?" => return Err((0, HELP.into())),
+            "-V" | "--version" => return Err((0, format!("slate {}
+", env!("CARGO_PKG_VERSION")))),
+            flag if flag.starts_with('-') => return Err((2, format!("slate: unknown option {flag}
+
+{HELP}"))),
             file => launch.files.push(PathBuf::from(cwd).join(file).to_string_lossy().into_owned()),
         }
     }
-    launch.workspace = workspace_for(cwd, &launch.files);
-    launch
+    if workspace {
+        launch.workspace = Some(workspace_for(cwd, &launch.files).unwrap_or_else(|| cwd.trim_end_matches(['\\', '/']).to_string()));
+    }
+    Ok(launch)
+}
+
+/// The release exe is a GUI app with no console of its own, so borrow the one it was run from.
+fn print_and_exit((code, text): (i32, String)) -> ! {
+    #[cfg(windows)]
+    unsafe {
+        windows_sys::Win32::System::Console::AttachConsole(windows_sys::Win32::System::Console::ATTACH_PARENT_PROCESS);
+    }
+    use std::io::Write;
+    let _ = if code == 0 { std::io::stdout().write_all(text.as_bytes()) } else { std::io::stderr().write_all(text.as_bytes()) };
+    std::process::exit(code)
 }
 
 fn this_launch() -> Launch {
     let args: Vec<String> = std::env::args().collect();
-    parse_launch(&args, &std::env::current_dir().unwrap_or_default().to_string_lossy())
+    parse_launch(&args, &std::env::current_dir().unwrap_or_default().to_string_lossy()).unwrap_or_default()
 }
 
 #[tauri::command]
@@ -378,10 +414,14 @@ pub fn run() {
         }
         std::process::exit(0);
     }
+    // Help, version and bad flags answer here, before a second launch could hand them to the first.
+    if let Err(answer) = parse_launch(&std::env::args().collect::<Vec<_>>(), "") {
+        print_and_exit(answer);
+    }
     tauri::Builder::default()
         // One process owns session.json. A second launch hands its files to the first and exits.
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
-            let launch = parse_launch(&args, &cwd);
+            let Ok(launch) = parse_launch(&args, &cwd) else { return };
             for file in &launch.files {
                 grant(app, file);
             }
@@ -498,14 +538,19 @@ mod tests {
 
     #[test]
     fn the_command_line_is_parsed_into_a_launch() {
-        let launch = |args: &[&str]| parse_launch(&args.iter().map(|a| a.to_string()).collect::<Vec<_>>(), "C:\\work");
-        let plain = launch(&["slate.exe", "--unknown", "notes.txt", "C:\\abs\\todo.md"]);
-        assert_eq!(plain.files, ["C:\\work\\notes.txt", "C:\\abs\\todo.md"]);
-        assert!(!plain.background && !plain.read && !plain.scratch);
+        let parse = |args: &[&str]| parse_launch(&args.iter().map(|a| a.to_string()).collect::<Vec<_>>(), r"C:\work");
+        let launch = |args: &[&str]| parse(args).unwrap();
+        let plain = launch(&["slate.exe", "notes.txt", r"C:\abs\todo.md"]);
+        assert_eq!(plain.files, [r"C:\work\notes.txt", r"C:\abs\todo.md"]);
+        assert!(!plain.background && !plain.read && !plain.scratch && plain.workspace.is_none());
         assert_eq!(
             launch(&["slate.exe", "add", "--read", "PLAN.md"]),
-            Launch { files: vec!["C:\\work\\PLAN.md".into()], read: true, scratch: false, background: true, workspace: None }
+            Launch { files: vec![r"C:\work\PLAN.md".into()], read: true, scratch: false, background: true, workspace: None }
         );
+        // -w with no repository anywhere makes the folder slate was run from the workspace
+        assert_eq!(launch(&["slate.exe", "-w", "PLAN.md"]).workspace.as_deref(), Some(r"C:\work"));
+        assert_eq!(parse(&["slate.exe", "-h"]).unwrap_err().0, 0);
+        assert_eq!(parse(&["slate.exe", "--nope", "x.md"]).unwrap_err().0, 2);
         // "add" is only a verb in first position; anywhere else it is a file called add
         assert_eq!(launch(&["slate.exe", "x.md", "add"]).files.len(), 2);
     }

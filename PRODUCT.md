@@ -39,7 +39,7 @@ Opened from the taskbar, "Open with", or `slate file.md` from a terminal. Often 
 - Settings with a real settings screen (public release), stored as JSON.
 - Single instance: a second launch hands its files to the running window.
 - The command line is the agent API, and there is no network code: `slate file`, `slate --read file`, `slate add file` (queue without taking focus, tab marked unread), `slate add --scratch file` (copy the text into a kept note).
-- Workspaces: one tab set per project, keyed by the git repository slate was run from. Plain launches and loose files use home.
+- Workspaces: one tab set per project, keyed by the git repository slate was run from, and only when asked for with `-w`. Without it, files open in whichever set is on screen.
 - Files that change on disk reload on their own when the tab has no unsaved edits; otherwise saving asks before overwriting.
 - A command bar (`:` with Vim keys on, Ctrl+Shift+P or F1 otherwise) lists every command.
 - UTF-8 and BOM-marked UTF-16 files. CRLF files stay CRLF, and a file goes back in the encoding it came in.
