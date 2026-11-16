@@ -286,25 +286,28 @@ function arrive() {
 }
 $<HTMLSelectElement>("workspace").onchange = (e) => void switchTo((e.target as HTMLSelectElement).value);
 
-async function save(saveAs = false, to?: string) {
+/** False if the user backed out of saving. */
+async function save(saveAs = false, to?: string): Promise<boolean> {
   sync();
   const tab = session.active;
   if (tab.state) {
-    await store.save(tab.state, tab.text);
     tab.dirty = false;
+    await store.save(tab.state, tab.text).catch((error) => ((tab.dirty = true), Promise.reject(error)));
     await (tab.state === "vimrc" ? applyVimrc() : loadKeys());
     if (!problem) report(`${title(tab)} saved and applied.`);
-    return flush();
+    await flush();
+    return true;
   }
-  if (!(await session.save(tab.id, saveAs, to))) return;
+  if (!(await session.save(tab.id, saveAs, to))) return false;
   void editor.setLanguage(tab);
   await flush();
+  return true;
 }
 
-async function closeTab(id: string) {
+async function closeTab(id: string, force = false) {
   sync();
   const last = session.tabs.length === 1;
-  if (!(await session.close(id))) return flip();
+  if (!(await session.close(id, force))) return flip();
   editor.drop(id);
   readingAt.delete(id);
   show(session.activeId);
@@ -312,10 +315,13 @@ async function closeTab(id: string) {
   if (last) store.quit();
 }
 
-/** `:q`. On the last card it just leaves; the text is kept either way, so there is nothing to ask. */
-function quitCard() {
+/**
+ * `:q`. On the last card it just leaves; the text is kept either way, so there is nothing to ask.
+ * `:q!`, or `:q` with the setting on, closes any other card without asking.
+ */
+function quitCard(force = false) {
   if (session.tabs.length === 1) store.quit();
-  else void closeTab(session.activeId);
+  else void closeTab(session.activeId, force || settings.quitWithoutAsking);
 }
 
 /** Ctrl+1 to Ctrl+8 pick a tab by position; Ctrl+9 is always the last one, as in browsers. */
@@ -637,7 +643,14 @@ async function openKeys(where: string) {
   let text = await store.load("keys").catch(() => null);
   if (text === null) await store.save("keys", (text = KEYS_STARTER));
   if (where === "editor") return store.openState("keys").catch(report);
-  const tab = session.tabs.find((t) => t.state === "keys") ?? Object.assign(session.newTab(), { state: "keys" as const, text });
+  showState("keys", text);
+}
+
+/** The vimrc or keys.json tab. One left open without edits takes the file's text, which may have changed elsewhere. */
+function showState(state: "vimrc" | "keys", text: string) {
+  let tab = session.tabs.find((t) => t.state === state);
+  if (tab && !tab.dirty && tab.text !== text) (editor.drop(tab.id), (tab.text = text));
+  tab ??= Object.assign(session.newTab(), { state, text });
   show(tab.id);
 }
 $("keys-here").onclick = () => void openKeys("");
@@ -715,8 +728,10 @@ const commands: Command[] = [
   { name: "saveas", hint: "Save under a new name", keys: "Ctrl Shift S", run: () => save(true).catch(report) },
   { name: "e", aliases: ["edit", "open"], hint: "Open a file", keys: "Ctrl O", run: (arg) => openFiles(typedPath(arg) ? [typedPath(arg)!] : undefined) },
   { name: "new", aliases: ["tabnew"], hint: "New tab", keys: "Ctrl N", run: newTab },
-  { name: "q", aliases: ["quit", "close"], hint: "Close this tab", keys: "Ctrl W", run: quitCard },
-  { name: "wq", aliases: ["x"], hint: "Save, then close this tab", run: () => save().then(quitCard, report) },
+  // vim hands `:q!` over as q with "!" for its argument; the command bar sees the separate q! below.
+  { name: "q", aliases: ["quit", "close"], hint: "Close this tab", keys: "Ctrl W", run: (arg) => quitCard(arg === "!") },
+  { name: "q!", hint: "Close this tab without asking, unsaved edits and all", run: () => quitCard(true) },
+  { name: "wq", aliases: ["x"], hint: "Save, then close this tab", run: () => save().then((saved) => saved && quitCard(), report) },
   { name: "qa", aliases: ["qall", "exit"], hint: "Quit slate. Every tab is kept.", run: () => store.quit() },
   { name: "md", aliases: ["read"], hint: "Flip between Write and Read", keys: "Ctrl E", run: () => setReading(settingsOpen ? Boolean(session.active.reading) : !session.active.reading) },
   { name: "zen", aliases: ["centered", "center"], hint: "Centre the text in a column", run: () => change({ zen: !settings.zen }) },
@@ -771,6 +786,8 @@ Vim.defineAction("slateCommands", () => palette.open());
 // default here, since copying into an agent's terminal is what this app is for) the unnamed
 // register mirrors to the clipboard too; :set clipboard= turns that off.
 Vim.defineOption("clipboard", "unnamedplus", "string", ["cb"]);
+/** The last yank's clipboard write. p waits for it, so yy then p never reads the clipboard from before. */
+let clipboardWrite: Promise<unknown> = Promise.resolve();
 {
   const registers = Vim.getRegisterController() as unknown as { pushText: (...args: unknown[]) => void };
   const push = registers.pushText.bind(registers);
@@ -778,7 +795,7 @@ Vim.defineOption("clipboard", "unnamedplus", "string", ["cb"]);
     const aliased = name === "*" ? "+" : name;
     push(aliased, operator, text, ...rest);
     const mirror = aliased === "+" || (!aliased && clipboardIsUnnamed());
-    if (mirror && typeof text === "string") void store.writeClipboard(text).catch(() => {});
+    if (mirror && typeof text === "string") clipboardWrite = store.writeClipboard(text).catch(() => {});
   };
 }
 function clipboardIsUnnamed() {
@@ -793,7 +810,7 @@ Vim.defineAction("paste", function (this: Actions, cm: unknown, args: { register
   const name = args.registerName === "*" ? "+" : args.registerName;
   const register = registers.getRegister(name);
   if (name !== "+" && (name || !clipboardIsUnnamed())) return this.continuePaste(cm, args, vim, register.toString(), register);
-  void store.readClipboard().then(
+  void clipboardWrite.then(() => store.readClipboard()).then(
     (text) => {
       if (!text || text === register.toString()) this.continuePaste(cm, args, vim, register.toString(), register);
       else this.continuePaste(cm, args, vim, text.replace(/\r\n?/g, "\n"), { linewise: text.endsWith("\n"), blockwise: false });
@@ -840,13 +857,12 @@ async function applyVimrc() {
 
 /** The vimrc is edited in slate itself, as a tab whose save writes the state file and re-applies it. */
 async function openVimrc() {
-  const text = (await store.load("vimrc").catch(() => null)) ?? VIMRC_STARTER;
-  const tab = session.tabs.find((t) => t.state === "vimrc") ?? Object.assign(session.newTab(), { state: "vimrc" as const, text });
-  show(tab.id);
+  showState("vimrc", (await store.load("vimrc").catch(() => null)) ?? VIMRC_STARTER);
 }
 Vim.mapCommand(":", "action", "slateCommands", {}, { context: "normal" });
 for (const command of commands) {
   for (const name of [command.name, ...(command.aliases ?? [])]) {
+    if (!/^\w+$/.test(name)) continue; // vim's ex parser only reads word characters as a command name
     Vim.defineEx(name, name, (_cm: unknown, params: { argString?: string }) => void command.run(params.argString?.trim() ?? ""));
   }
 }

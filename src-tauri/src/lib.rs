@@ -108,12 +108,12 @@ fn load_state(app: AppHandle, name: String) -> Result<Option<String>, String> {
     };
     // A file sealed under another Windows account, or damaged, is kept aside, not overwritten.
     let Ok((json, sealed)) = vault::open(&bytes) else {
-        let _ = fs::rename(&path, path.with_extension("corrupt.json"));
+        set_aside(&path);
         return Ok(None);
     };
     // vimrc is not JSON; keys is hand-edited, so a typo is reported by the page, not moved aside.
     if !matches!(name.as_str(), "vimrc" | "keys") && serde_json::from_str::<serde_json::Value>(&json).is_err() {
-        let _ = fs::rename(&path, path.with_extension("corrupt.json"));
+        set_aside(&path);
         return Ok(None);
     }
     // Tabs saved before encryption get sealed the first time they are read.
@@ -121,6 +121,13 @@ fn load_state(app: AppHandle, name: String) -> Result<Option<String>, String> {
         let _ = write_state(&path, &name, &json);
     }
     Ok(Some(json))
+}
+
+/// Moves an unreadable state file to `<name>.corrupt-<unix nanos>.json`, so a second one can't
+/// replace the first.
+fn set_aside(path: &std::path::Path) {
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
+    let _ = fs::rename(path, path.with_extension(format!("corrupt-{nanos}.json")));
 }
 
 /// The tab sets hold unsaved text, which can be anything the user pasted. Those are encrypted;

@@ -50,6 +50,23 @@ The command line is the whole API, so there is still no network code. `slate pla
 - [x] Workspaces, keyed by folder (owner's call, 2026-09-20): the git repository slate was run from, else the one the first file lives in, else home. Each is its own tab set (`ws-<folder>-<hash>.json` beside `session.json`). `slate add` from inside a repo files into that repo's set without moving the user, and flags it on the switcher; opening a file in the foreground switches the window over. The switcher only appears once a workspace exists. `:ws <name>` switches too. Checked on the real exe.
 - [ ] No way yet to forget a workspace, and its tab set file stays behind if the folder is deleted.
 
+## Council, 2026-11-16 (Claude Opus, GPT Sol; 3 rounds)
+
+Scores: Opus 5 → 8 → 8.5, Sol 6 → 7 → 8. Both said they would not switch from Notepad yet: the unsigned exe and data-loss paths were the reasons.
+
+Fixed and covered by tests in `session.test.ts`: `:wq` closing after a cancelled save; edits typed during a save lost on restart; closing a tab mid-save (including two overlapping saves) skipping the prompt; a deleted file's tab dropped at restart, and staying "edited" forever once the file came back; vimrc/keys tabs asking "discard?" after saving and going stale; `yy` then `p` reading the old clipboard; a second unreadable state file replacing the first `.corrupt` copy.
+
+Open:
+- [ ] Opening a file from a git repo switches the whole tab set to that repo's workspace. Both seats found it confusing for a Notepad user. Owner's call: make it explicit, or keep it.
+- [ ] Two `slate add` arrivals into the same inactive workspace can lose one (no serialisation).
+- [ ] A failed session write doesn't stop the window closing or a workspace switch.
+- [ ] Read-view find keeps matches from the previous document after a re-render.
+- [ ] A file that fails to decrypt is set aside silently; nothing on screen says so.
+- [ ] keys.json combos come from `e.key`, so `ctrl+shift+1` arrives as `ctrl+shift+!`; Alt combos can't be bound.
+- [ ] No visible Open or Save control. The palette matches command names, not their descriptions.
+- [ ] Declining the read prompt for a file marks its tab unsaved until the next successful read.
+- Suggested next builds: Opus says clickable `path:line` in Read view; Sol says a "recently closed" shelf. Both said cut the heading-font picker.
+
 ## Costly
 
 - [x] Installer (2026-09-26): `bun run tauri build` makes `src-tauri/target/release/bundle/nsis/slate_0.1.0_x64-setup.exe`, 2.1 MB, per-user, no admin, WebView2 bootstrapped, Start menu entry, uninstall entry, file associations for .md/.markdown/.mdx and .txt/.log/.json/.toml/.yaml/.yml/.ini/.cfg/.env, install dir on the user PATH. The PATH edit is done by the exe (`slate --path-add` / `--path-remove`, tested with a >1024-char PATH) because NSIS strings cap at 1024 and this machine's user PATH is 1981.

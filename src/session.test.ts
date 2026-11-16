@@ -156,3 +156,73 @@ test("each workspace is a tab set of its own", async () => {
   await homeAgain.restore();
   expect(homeAgain.tabs.map((t) => t.text)).toEqual(["home scratch"]);
 });
+
+test("an edit typed while a save is being written is kept as unsaved", async () => {
+  const { store } = fakeStore({ "C:\a.txt": "v1" });
+  let finishWrite = () => {};
+  store.writeFile = (path, text) => new Promise((done) => (finishWrite = () => done(void store.save(`file:${path}`, text))));
+  const session = new Session(store);
+  await session.restore();
+  const tab = await session.open("C:\a.txt");
+  tab.text = "first edit";
+  tab.dirty = true;
+  const saving = session.save(tab.id);
+  await Promise.resolve(); // the write is now in flight
+  await new Promise((r) => setTimeout(r));
+  tab.text = "second edit"; // what main.ts does when the editor changes mid-save
+  tab.dirty = true;
+  finishWrite();
+  await saving;
+  expect(tab.dirty).toBe(true);
+});
+
+test("closing a tab while its save is still being written asks first", async () => {
+  const { store, state } = fakeStore({ "C:\a.txt": "v1" });
+  let failWrite = () => {};
+  store.writeFile = () => new Promise((_, fail) => (failWrite = () => fail(new Error("disk full"))));
+  const session = new Session(store);
+  await session.restore();
+  const tab = await session.open("C:\a.txt");
+  Object.assign(tab, { text: "edit", dirty: true });
+  const saving = session.save(tab.id).catch(() => {});
+  await new Promise((r) => setTimeout(r));
+  state.confirmAnswer = false;
+  expect(await session.close(tab.id)).toBe(false);
+  failWrite();
+  await saving;
+  expect(tab.dirty).toBe(true);
+});
+
+test("a file deleted and recreated leaves an untouched tab clean, so it reloads", async () => {
+  const { store, state } = fakeStore({ "C:\a.txt": "v1" });
+  const session = new Session(store);
+  await session.restore();
+  const tab = await session.open("C:\a.txt");
+  delete state.files["C:\a.txt"];
+  await session.refresh(tab.id);
+  expect(tab.dirty).toBe(true); // the only copy left is the tab
+  state.files["C:\a.txt"] = "v2";
+  expect(await session.refresh(tab.id)).toBe("reloaded");
+  expect([tab.text, tab.dirty]).toEqual(["v2", false]);
+});
+
+test("with two saves in flight, the first finishing doesn't let a close skip the question", async () => {
+  const { store, state } = fakeStore({ "C:\a.txt": "v1" });
+  const writes: { done: () => void; fail: () => void }[] = [];
+  store.writeFile = () => new Promise((done, fail) => void writes.push({ done: () => done(), fail: () => fail(new Error("disk full")) }));
+  const session = new Session(store);
+  await session.restore();
+  const tab = await session.open("C:\a.txt");
+  Object.assign(tab, { text: "A", dirty: true });
+  const first = session.save(tab.id);
+  await new Promise((r) => setTimeout(r));
+  Object.assign(tab, { text: "B", dirty: true });
+  const second = session.save(tab.id).catch(() => {});
+  await new Promise((r) => setTimeout(r));
+  writes[0].done();
+  await first;
+  state.confirmAnswer = false;
+  expect(await session.close(tab.id)).toBe(false);
+  writes[1].fail();
+  await second;
+});

@@ -14,6 +14,8 @@ export interface Tab {
   disk?: string;
   /** The file changed on disk while this tab held unsaved edits. */
   conflict?: boolean;
+  /** The file vanished, so the tab was marked unsaved to keep its text. */
+  gone?: boolean;
   /** Showing the rendered markdown rather than the source. */
   reading?: boolean;
   /** Queued by `slate add` and not looked at yet. */
@@ -43,6 +45,8 @@ export class Session {
   private writing: Promise<void> = Promise.resolve();
   /** Nothing was ever saved for this tab set: its one blank tab is a placeholder, not the user's. */
   private pristine = false;
+  /** How many saves are still being written, per tab. Closing one asks, since the write may yet fail. */
+  private saving = new Map<string, number>();
 
   /** `name` is the state file this tab set lives in: "session" for home, "ws-…" for a workspace. */
   constructor(private store: Store, readonly name = "session") {}
@@ -125,7 +129,16 @@ export class Session {
     const tab = this.tabs.find((t) => t.id === id);
     if (!tab?.path) return "same";
     const file = await this.store.readFile(tab.path).catch(() => null);
-    if (!file) return "same"; // deleted or unreadable: what we hold is now the only copy, keep it
+    if (!file) {
+      // Gone, not just locked mid-write: what we hold is now the only copy, so it is kept as unsaved.
+      if ((await this.store.stamp(tab.path).catch(() => "")) === null) Object.assign(tab, { dirty: true, gone: true });
+      return "same";
+    }
+    // Back again (git checkout deletes, then writes). Untouched since it went, the tab is clean again.
+    if (tab.gone) {
+      if (fingerprint(tab.text, tab.crlf) === tab.disk) tab.dirty = false;
+      delete tab.gone;
+    }
     const onDisk = fromDisk(file);
     // A tab restored from a session written before fingerprints existed has nothing to compare.
     tab.disk ??= onDisk.disk;
@@ -149,18 +162,30 @@ export class Session {
       );
       if (!overwrite) return false;
     }
-    const text = tab.crlf ? tab.text.replace(/\n/g, "\r\n") : tab.text;
-    await this.store.writeFile(path, text, tab.encoding ?? "utf-8");
-    Object.assign(tab, { path, dirty: false, conflict: false, disk: fingerprint(tab.text, tab.crlf) });
+    const saved = tab.text;
+    // Cleared before the write, so an edit typed while it is in flight marks the tab dirty again.
+    tab.dirty = false;
+    this.saving.set(id, (this.saving.get(id) ?? 0) + 1);
+    try {
+      await this.store.writeFile(path, tab.crlf ? saved.replace(/\n/g, "\r\n") : saved, tab.encoding ?? "utf-8");
+    } catch (error) {
+      tab.dirty = true;
+      throw error;
+    } finally {
+      const left = this.saving.get(id)! - 1;
+      if (left) this.saving.set(id, left);
+      else this.saving.delete(id);
+    }
+    Object.assign(tab, { path, conflict: false, disk: fingerprint(saved, tab.crlf) });
     return true;
   }
 
   /** False if the tab had unsaved text and the user chose to keep it. */
-  async close(id: string): Promise<boolean> {
+  async close(id: string, force = false): Promise<boolean> {
     const index = this.tabs.findIndex((t) => t.id === id);
     const tab = this.tabs[index];
-    const losesText = tab.path ? tab.dirty : tab.text.trim() !== "";
-    if (losesText && !(await this.store.confirm(`Close "${title(tab)}" and discard what you haven't saved?`))) {
+    const losesText = (tab.path || tab.state ? tab.dirty : tab.text.trim() !== "") || this.saving.has(id);
+    if (losesText && !force && !(await this.store.confirm(`Close "${title(tab)}" and discard what you haven't saved?`))) {
       return false;
     }
     this.tabs.splice(index, 1);

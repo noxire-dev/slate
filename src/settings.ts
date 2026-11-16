@@ -14,6 +14,8 @@ export interface Settings {
   /** Underline misspellings in notes and markdown. Never in code. */
   spellcheck: boolean;
   vim: boolean;
+  /** `:q` closes a tab without asking, the way `:q!` does. */
+  quitWithoutAsking: boolean;
   /** Text set in a centred column instead of from the left edge. */
   zen: boolean;
   /** Open .md files in the reading view instead of as source. */
@@ -32,6 +34,7 @@ export const defaults: Settings = {
   wrap: true,
   spellcheck: true,
   vim: false,
+  quitWithoutAsking: false,
   zen: false,
   readMarkdown: false,
 };
