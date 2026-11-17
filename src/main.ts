@@ -283,9 +283,16 @@ async function switchTo(id: string): Promise<boolean> {
   stamps.clear();
   session = new Session(store, id);
   await session.restore();
+  void showSetAside();
   arrive();
   show(session.activeId);
   return true;
+}
+
+/** A state file that couldn't be read was moved aside, not deleted. Say so, or tabs just vanish. */
+async function showSetAside() {
+  const notes = await store.takeSetAside().catch(() => []);
+  if (notes.length) report(notes.join(" "));
 }
 
 /** Takes a workspace off the switcher. Its tab set file stays, so `slate -w` in that folder brings the tabs back. */
@@ -911,6 +918,7 @@ applySettings();
 void fillForm();
 await session.restore();
 show(session.activeId);
+void showSetAside();
 await receive(launch);
 store.onQuit(flush);
 void applyVimrc();
@@ -919,9 +927,12 @@ void loadKeys();
 // `slate add` with nothing running: file the tabs and leave without ever showing a window.
 // Unless someone opens slate for real in that moment, in which case stay.
 let leaving = launch.background;
+// One arrival at a time: two `slate add`s into the same unseen workspace would each read its
+// tab set, add their file and write it back, and the second write would drop the first file.
+let receiving = Promise.resolve();
 store.onFiles((next) => {
   if (!next.background && leaving) ((leaving = false), store.showWindow());
-  void receive(next);
+  receiving = receiving.then(() => receive(next)).catch(report);
 });
 if (leaving) {
   // Filed unseen. If that wasn't the workspace the user will come back to, flag it on the switcher.

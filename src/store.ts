@@ -44,6 +44,8 @@ export interface Store {
   save(name: string, json: string): Promise<void>;
   /** Opens one of slate's own files in the app Windows opens it with. */
   openState(name: string): Promise<void>;
+  /** State files found unreadable and moved aside since the last call, as sentences to show. */
+  takeSetAside(): Promise<string[]>;
   /** The Windows clipboard, as text. */
   readClipboard(): Promise<string>;
   writeClipboard(text: string): Promise<void>;
@@ -76,6 +78,7 @@ export class TauriStore implements Store {
   load = (name: string) => invoke<string | null>("load_state", { name });
   save = (name: string, json: string) => invoke<void>("save_state", { name, json });
   openState = (name: string) => invoke<void>("open_state", { name });
+  takeSetAside = () => invoke<string[]>("take_set_aside");
   // Through Rust, not navigator.clipboard: WebView2 may ask, or refuse, before letting a page read it.
   readClipboard = async () => (await readText().catch(() => "")) ?? "";
   writeClipboard = (text: string) => writeText(text);
@@ -119,6 +122,7 @@ export class BrowserStore implements Store {
   load = async (name: string) => localStorage.getItem(name);
   save = async (name: string, json: string) => localStorage.setItem(name, json);
   openState = async () => {};
+  takeSetAside = async () => [];
   readClipboard = () => navigator.clipboard.readText();
   writeClipboard = (text: string) => navigator.clipboard.writeText(text);
   readFile = async (path: string) => ({ text: localStorage.getItem(`file:${path}`) ?? "", encoding: "utf-8" });

@@ -108,12 +108,12 @@ fn load_state(app: AppHandle, name: String) -> Result<Option<String>, String> {
     };
     // A file sealed under another Windows account, or damaged, is kept aside, not overwritten.
     let Ok((json, sealed)) = vault::open(&bytes) else {
-        set_aside(&path);
+        set_aside(&path, "couldn't be decrypted: saved under another Windows account, or damaged");
         return Ok(None);
     };
     // vimrc is not JSON; keys is hand-edited, so a typo is reported by the page, not moved aside.
     if !matches!(name.as_str(), "vimrc" | "keys") && serde_json::from_str::<serde_json::Value>(&json).is_err() {
-        set_aside(&path);
+        set_aside(&path, "was damaged");
         return Ok(None);
     }
     // Tabs saved before encryption get sealed the first time they are read.
@@ -125,9 +125,23 @@ fn load_state(app: AppHandle, name: String) -> Result<Option<String>, String> {
 
 /// Moves an unreadable state file to `<name>.corrupt-<unix nanos>.json`, so a second one can't
 /// replace the first.
-fn set_aside(path: &std::path::Path) {
+/// What was set aside since the page last asked, for it to put on screen.
+static SET_ASIDE: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+fn set_aside(path: &std::path::Path, why: &str) {
     let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
-    let _ = fs::rename(path, path.with_extension(format!("corrupt-{nanos}.json")));
+    let aside = path.with_extension(format!("corrupt-{nanos}.json"));
+    let name = |p: &std::path::Path| p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let note = match fs::rename(path, &aside) {
+        Ok(()) => format!("{} {why}. It was kept as {} and slate started it fresh.", name(path), name(&aside)),
+        Err(e) => format!("{} {why}, and couldn't be moved aside ({e}).", name(path)),
+    };
+    SET_ASIDE.lock().unwrap().push(note);
+}
+
+#[tauri::command]
+fn take_set_aside() -> Vec<String> {
+    std::mem::take(&mut *SET_ASIDE.lock().unwrap())
 }
 
 /// The tab sets hold unsaved text, which can be anything the user pasted. Those are encrypted;
@@ -215,10 +229,16 @@ fn write_file(app: AppHandle, path: String, text: String, encoding: String) -> R
 /// Cheap to ask every second: changes whenever the file is rewritten. None if it is gone.
 #[tauri::command]
 fn file_stamp(grants: State<GrantStore>, path: String) -> Option<String> {
+    // None means the file is gone, and the page keeps the tab's text as the only copy. A file
+    // slate may not read, or can't stat, is not gone: it gets a stamp that never changes.
     if !grants.0.lock().unwrap().may_read(&path) {
-        return None; // polled every second: never worth a prompt
+        return Some("not granted".into()); // polled every second: never worth a prompt
     }
-    let meta = fs::metadata(&path).ok()?;
+    let meta = match fs::metadata(&path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(_) => return Some("unreadable".into()),
+        Ok(meta) => meta,
+    };
     let modified = meta.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?;
     Some(format!("{}:{}", modified.as_millis(), meta.len()))
 }
@@ -470,6 +490,7 @@ pub fn run() {
             load_state,
             save_state,
             open_state,
+            take_set_aside,
             read_file,
             write_file,
             file_stamp,
@@ -484,7 +505,22 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode, encode, parse_launch, Launch};
+    use super::{decode, encode, parse_launch, set_aside, take_set_aside, Launch};
+
+    #[test]
+    fn a_state_file_set_aside_is_kept_and_reported_once() {
+        let dir = std::env::temp_dir().join(format!("slate-aside-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("ws-x-1.json");
+        std::fs::write(&file, "slate-dpapi1\ngarbage").unwrap();
+        set_aside(&file, "couldn't be decrypted");
+        let notes = take_set_aside();
+        assert!(!file.exists());
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1); // kept, under another name
+        assert!(notes.len() == 1 && notes[0].starts_with("ws-x-1.json couldn't be decrypted. It was kept as ws-x-1.corrupt-"), "{notes:?}");
+        assert!(take_set_aside().is_empty());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn a_launch_belongs_to_the_git_repository_it_was_run_from() {

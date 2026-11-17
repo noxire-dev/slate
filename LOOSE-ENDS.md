@@ -59,13 +59,13 @@ Fixed and covered by tests in `session.test.ts`: `:wq` closing after a cancelled
 Open:
 
 - [x] Opening a file from a git repo switches the whole tab set to that repo's workspace. Owner's call (2026-11-16): explicit. Only `slate -w` picks a workspace; everything else opens in the set on screen.
-- [ ] Two `slate add` arrivals into the same inactive workspace can lose one (no serialisation).
+- [x] Two `slate add` arrivals into the same inactive workspace can lose one (no serialisation). Arrivals are now handled one at a time (2026-11-17). Not reproduced on the real exe.
 - [x] A failed session write doesn't stop the window closing or a workspace switch. Now the switch is refused with a message, and closing asks first.
 - [x] Read-view find keeps matches from the previous document after a re-render. A re-render now clears them, or searches the new page if the box is open.
-- [ ] A file that fails to decrypt is set aside silently; nothing on screen says so.
+- [x] A file that fails to decrypt is set aside silently; nothing on screen says so. The status bar now names the file and where it was kept (2026-11-17).
 - [x] keys.json combos come from `e.key`, so `ctrl+shift+1` arrives as `ctrl+shift+!`; Alt combos can't be bound. Fixed 2026-11-16: digits and punctuation are named by key position, Alt binds, modifier order in the file doesn't matter. Checked with fake key events, not in the real window.
 - [ ] No visible Open or Save control (owner, 2026-11-16: undecided; Ctrl+O/Ctrl+S, `:w` and the palette's open/save aliases cover it for now). The palette matches command names, not their descriptions.
-- [ ] Declining the read prompt for a file marks its tab unsaved until the next successful read.
+- [x] Declining the read prompt for a file marks its tab unsaved until the next successful read. Only a file that is really gone counts as gone now; an ungranted or unstattable one doesn't (2026-11-17).
 - Suggested next builds: Opus says clickable `path:line` in Read view; Sol says a "recently closed" shelf. Both said cut the heading-font picker.
 
 ## Costly

@@ -8,6 +8,7 @@ function fakeStore(files: Record<string, string> = {}) {
     load: async (name) => state.saved[name] ?? null,
     save: async (name, json) => void (state.saved[name] = json),
     openState: async () => {},
+    takeSetAside: async () => [],
     readClipboard: async () => "",
     writeClipboard: async () => {},
     readFile: async (path) => {
